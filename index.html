@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulación 3D del Sistema Solar</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #000;
+            font-family: Arial, sans-serif;
+            color: #fff;
+        }
+
+        #container {
+            position: relative;
+            width: 100%;
+            height: 100vh;
+        }
+
+        #info-panel {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            max-width: 300px;
+            z-index: 100;
+            display: none;
+        }
+
+        #info-panel h2 {
+            margin-top: 0;
+            color: #4682B4;
+        }
+
+        #controls {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 10px;
+            z-index: 100;
+        }
+
+        #controls h3 {
+            margin-top: 0;
+            color: #4682B4;
+        }
+
+        button, input {
+            background-color: #2E8B57;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            margin: 5px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #1E5B37;
+        }
+
+        #planet-info {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            max-width: 300px;
+            z-index: 100;
+            display: none;
+        }
+
+        #planet-info h2 {
+            margin-top: 0;
+            color: #4682B4;
+        }
+
+        #close-info {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            background: none;
+            border: none;
+            color: white;
+            font-size: 20px;
+            cursor: pointer;
+        }
+
+        @media (max-width: 768px) {
+            #controls, #info-panel, #planet-info {
+                width: 90%;
+                left: 5%;
+                right: 5%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="container"></div>
+
+    <!-- Panel de información general -->
+    <div id="info-panel">
+        <h2>Simulación 3D del Sistema Solar</h2>
+        <p>Explora el Sistema Solar con tu ratón:</p>
+        <ul>
+            <li><strong>Rotar:</strong> Haz clic y arrastra.</li>
+            <li><strong>Acercar/Alejar:</strong> Usa la rueda del ratón.</li>
+            <li><strong>Desplazar:</strong> Haz clic derecho y arrastra.</li>
+            <li><strong>Seleccionar planeta:</strong> Haz clic en un planeta para ver su información.</li>
+        </ul>
+    </div>
+
+    <!-- Panel de controles -->
+    <div id="controls">
+        <h3>Controles</h3>
+        <button onclick="toggleOrbits()">Mostrar/ocultar órbitas</button>
+        <button onclick="increaseSpeed()">Aumentar velocidad</button>
+        <button onclick="decreaseSpeed()">Reducir velocidad</button>
+        <button onclick="togglePause()">Pausar/Reanudar</button>
+    </div>
+
+    <!-- Panel de información del planeta -->
+    <div id="planet-info">
+        <button id="close-info" onclick="closePlanetInfo()">×</button>
+        <h2 id="planet-name">Planeta</h2>
+        <p><strong>Radio:</strong> <span id="planet-radius"></span> km</p>
+        <p><strong>Gravedad:</strong> <span id="planet-gravity"></span> m/s²</p>
+        <p><strong>Rotación:</strong> <span id="planet-rotation"></span></p>
+        <p><strong>Traslación:</strong> <span id="planet-orbit"></span></p>
+        <p><strong>Atmósfera:</strong> <span id="planet-atmosphere"></span></p>
+    </div>
+
+    <!-- Cargar Three.js desde CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/controls/OrbitControls.js"></script>
+
+    <script>
+        // Variables globales
+        let scene, camera, renderer, controls;
+        let sun, planets = [];
+        let orbits = [];
+        let clock = new THREE.Clock();
+        let speed = 1;
+        let isPaused = false;
+        let raycaster = new THREE.Raycaster();
+        let mouse = new THREE.Vector2();
+
+        // Datos de los planetas (tamaños y distancias escalados para visualización educativa)
+        const planetData = [
+            {
+                name: "Mercurio",
+                radius: 2.44, // Radio real: 2,440 km
+                distance: 5.8, // Distancia real: 57.9 millones de km
+                color: 0xAAAAAA, // Gris
+                rotationTime: 58.6, // Días terrestres
+                orbitTime: 88, // Días terrestres
+                gravity: 3.7, // m/s²
+                atmosphere: "Casi nula (traza de O₂, Na, H₂)",
+                texture: "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d9/Mercury_in_color_-_Prockter07-Edited.jpg/800px-Mercury_in_color_-_Prockter07-Edited.jpg"
+            },
+            {
+                name: "Venus",
+                radius: 6.05, // Radio real: 6,052 km
+                distance: 10.8, // Distancia real: 108.2 millones de km
+                color: 0xFFD700, // Amarillento
+                rotationTime: 243, // Días terrestres (rotación retrógrada)
+                orbitTime: 225, // Días terrestres
+                gravity: 8.87, // m/s²
+                atmosphere: "96.5% CO₂, 3.5% N₂",
+                texture: "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e5/Venus-real_color.jpg/800px-Venus-real_color.jpg"
+            },
+            {
+                name: "Tierra",
+                radius: 6.37, // Radio real: 6,371 km
+                distance: 15, // Distancia real: 149.6 millones de km
+                color: 0x1DA1F2, // Azul-verde
+                rotationTime: 1, // Día terrestre
+                orbitTime: 365, // Días terrestres
+                gravity: 9.8, // m/s²
+                atmosphere: "78% N₂, 21% O₂, 0.93% Ar, 0.04% CO₂",
+                texture: "https://upload.wikimedia.org/wikipedia/commons/thumb/9/97/The_Earth_seen_from_Apollo_17.jpg/800px-The_Earth_seen_from_Apollo_17.jpg"
+            },
+            {
+                name: "Marte",
+                radius: 3.39, // Radio real: 3,390 km
+                distance: 22.8, // Distancia real: 227.9 millones de km
+                color: 0xCD853F, // Rojizo
+                rotationTime: 1.03, // Días terrestres
+                orbitTime: 687, // Días terrestres
+                gravity: 3.7, // m/s²
+                atmosphere: "95% CO₂, 2.7% N₂, 1.6% Ar, 0.13% O₂",
+                texture: "https://upload.wikimedia.org/wikipedia/commons/thumb/0/02/OSIRIS_Mars_true_color.jpg/800px-OSIRIS_Mars_true_color.jpg"
+            },
+            {
+                name: "Júpiter",
+                radius: 14, // Radio real: 69,911 km (escalado para visualización)
+                distance: 77.8, // Distancia real: 778.3 millones de km
+                color: 0xDEB887, // Beige-marrón
+                rotationTime: 0.41, // Días terrestres
+                orbitTime: 4333, // Días terrestres (11.86 años)
+                gravity: 24.79, // m/s²
+                atmosphere: "90% H₂, 10% He",
+                texture: "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2b/Jupiter_and_its_shrunk_Great_Red_Spot.jpg/800px-Jupiter_and_its_shrunk_Great_Red_Spot.jpg"
+            },
+            {
+                name: "Saturno",
+                radius: 12, // Radio real: 58,232 km (escalado)
+                distance: 142.7, // Distancia real: 1,427 millones de km
+                color: 0xFFE4B5, // Amarillo pálido
+                rotationTime: 0.45, // Días terrestres
+                orbitTime: 10759, // Días terrestres (29.46 años)
+                gravity: 10.44, // m/s²
+                atmosphere: "96% H₂, 3% He, 0.4% CH₄",
+                texture: "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c7/Saturn_during_Equinox.jpg/800px-Saturn_during_Equinox.jpg",
+                hasRings: true
+            },
+            {
+                name: "Urano",
+                radius: 5.11, // Radio real: 25,362 km (escalado)
+                distance: 287.1, // Distancia real: 2,871 millones de km
+                color: 0xADD8E6, // Azul claro
+                rotationTime: 0.72, // Días terrestres (rotación inclinada)
+                orbitTime: 30687, // Días terrestres (84.01 años)
+                gravity: 8.69, // m/s²
+                atmosphere: "83% H₂, 15% He, 2% CH₄",
+                texture: "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3d/Urano2.jpg/800px-Urano2.jpg",
+                tilt: 98 // Inclinación del eje en grados
+            },
+            {
+                name: "Neptuno",
+                radius: 5, // Radio real: 24,622 km (escalado)
+                distance: 449.5, // Distancia real: 4,495 millones de km
+                color: 0x1E90FF, // Azul intenso
+                rotationTime: 0.67, // Días terrestres
+                orbitTime: 60182, // Días terrestres (164.8 años)
+                gravity: 11.15, // m/s²
+                atmosphere: "80% H₂, 19% He, 1% CH₄",
+                texture: "https://upload.wikimedia.org/wikipedia/commons/thumb/5/5e/Neptune_Full.jpg/800px-Neptune_Full.jpg"
+            }
+        ];
+
+        // Inicializar la escena
+        function init() {
+            // Crear la escena
+            scene = new THREE.Scene();
+
+            // Crear la cámara
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 10000);
+            camera.position.set(0, 50, 100);
+
+            // Crear el renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            document.getElementById('container').appendChild(renderer.domElement);
+
+            // Añadir controles de órbita
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+
+            // Añadir luz ambiental
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
+            scene.add(ambientLight);
+
+            // Añadir luz direccional (Sol)
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+            directionalLight.position.set(0, 0, 0);
+            scene.add(directionalLight);
+
+            // Crear el Sol
+            const sunGeometry = new THREE.SphereGeometry(10, 32, 32);
+            const sunMaterial = new THREE.MeshBasicMaterial({
+                color: 0xFFFF00,
+                emissive: 0xFFFF00,
+                emissiveIntensity: 0.8
+            });
+            sun = new THREE.Mesh(sunGeometry, sunMaterial);
+            scene.add(sun);
+
+            // Añadir luz puntual al Sol para iluminar los planetas
+            const sunLight = new THREE.PointLight(0xffffff, 2, 1000);
+            sunLight.position.set(0, 0, 0);
+            scene.add(sunLight);
+
+            // Crear los planetas
+            planetData.forEach((data, index) => {
+                const geometry = new THREE.SphereGeometry(data.radius, 32, 32);
+
+                // Cargar textura si está disponible
+                let material;
+                if (data.texture) {
+                    const textureLoader = new THREE.TextureLoader();
+                    material = new THREE.MeshPhongMaterial({
+                        map: textureLoader.load(data.texture),
+                        shininess: 30
+                    });
+                } else {
+                    material = new THREE.MeshPhongMaterial({
+                        color: data.color,
+                        shininess: 30
+                    });
+                }
+
+                const planet = new THREE.Mesh(geometry, material);
+                planet.position.x = data.distance * 2;
+                planet.userData = data;
+                scene.add(planet);
+                planets.push(planet);
+
+                // Añadir eje de rotación
+                const axisGeometry = new THREE.CylinderGeometry(0.2, 0.2, data.radius * 2, 8);
+                const axisMaterial = new THREE.MeshBasicMaterial({ color: 0xFFFFFF });
+                const axis = new THREE.Mesh(axisGeometry, axisMaterial);
+                axis.rotation.x = Math.PI / 2;
+                if (data.tilt) {
+                    axis.rotation.z = THREE.MathUtils.degToRad(data.tilt);
+                }
+                planet.add(axis);
+
+                // Añadir órbita
+                const orbitGeometry = new THREE.RingGeometry(data.distance * 2 - 0.5, data.distance * 2 + 0.5, 64);
+                const orbitMaterial = new THREE.MeshBasicMaterial({
+                    color: 0x555555,
+                    side: THREE.DoubleSide,
+                    transparent: true,
+                    opacity: 0.3
+                });
+                const orbit = new THREE.Mesh(orbitGeometry, orbitMaterial);
+                orbit.rotation.x = Math.PI / 2;
+                scene.add(orbit);
+                orbits.push(orbit);
+
+                // Añadir anillos a Saturno
+                if (data.hasRings) {
+                    const ringGeometry = new THREE.RingGeometry(data.radius * 1.5, data.radius * 2.5, 64);
+                    const ringMaterial = new THREE.MeshBasicMaterial({
+                        color: 0xD2B48C,
+                        side: THREE.DoubleSide
+                    });
+                    const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+                    ring.rotation.x = Math.PI / 2;
+                    planet.add(ring);
+                }
+            });
+
+            // Añadir fondo de estrellas
+            createStarfield();
+
+            // Añadir evento para el clic del ratón
+            window.addEventListener('click', onMouseClick, false);
+
+            // Añadir evento para el tamaño de la ventana
+            window.addEventListener('resize', onWindowResize, false);
+
+            // Mostrar panel de información al inicio
+            setTimeout(() => {
+                document.getElementById('info-panel').style.display = 'block';
+            }, 1000);
+
+            // Ocultar el panel de información después de 10 segundos
+            setTimeout(() => {
+                document.getElementById('info-panel').style.display = 'none';
+            }, 10000);
+
+            // Iniciar la animación
+            animate();
+        }
+
+        // Crear fondo de estrellas
+        function createStarfield() {
+            const starsGeometry = new THREE.BufferGeometry();
+            const starsMaterial = new THREE.PointsMaterial({
+                color: 0xFFFFFF,
+                size: 0.1
+            });
+
+            const starsVertices = [];
+            for (let i = 0; i < 5000; i++) {
+                const x = (Math.random() - 0.5) * 2000;
+                const y = (Math.random() - 0.5) * 2000;
+                const z = (Math.random() - 0.5) * 2000;
+                starsVertices.push(x, y, z);
+            }
+
+            starsGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starsVertices, 3));
+            const stars = new THREE.Points(starsGeometry, starsMaterial);
+            scene.add(stars);
+        }
+
+        // Manejar el clic del ratón
+        function onMouseClick(event) {
+            // Calcular la posición del ratón en coordenadas normalizadas
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            // Actualizar el raycaster
+            raycaster.setFromCamera(mouse, camera);
+
+            // Verificar intersecciones con los planetas
+            const intersects = raycaster.intersectObjects(planets);
+
+            if (intersects.length > 0) {
+                const planet = intersects[0].object;
+                showPlanetInfo(planet.userData);
+            }
+        }
+
+        // Mostrar información del planeta
+        function showPlanetInfo(data) {
+            document.getElementById('planet-name').textContent = data.name;
+            document.getElementById('planet-radius').textContent = data.radius * 1000;
+            document.getElementById('planet-gravity').textContent = data.gravity;
+            document.getElementById('planet-rotation').textContent = data.rotationTime + " días terrestres";
+            document.getElementById('planet-orbit').textContent = data.orbitTime + " días terrestres";
+            document.getElementById('planet-atmosphere').textContent = data.atmosphere;
+            document.getElementById('planet-info').style.display = 'block';
+        }
+
+        // Cerrar el panel de información del planeta
+        function closePlanetInfo() {
+            document.getElementById('planet-info').style.display = 'none';
+        }
+
+        // Ajustar el tamaño de la ventana
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // Alternar la visibilidad de las órbitas
+        function toggleOrbits() {
+            orbits.forEach(orbit => {
+                orbit.visible = !orbit.visible;
+            });
+        }
+
+        // Aumentar la velocidad de la simulación
+        function increaseSpeed() {
+            speed *= 1.5;
+        }
+
+        // Reducir la velocidad de la simulación
+        function decreaseSpeed() {
+            speed /= 1.5;
+        }
+
+        // Pausar o reanudar la simulación
+        function togglePause() {
+            isPaused = !isPaused;
+        }
+
+        // Animación
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (!isPaused) {
+                const delta = clock.getDelta() * speed;
+
+                // Rotar el Sol
+                sun.rotation.y += delta * 0.1;
+
+                // Rotar y trasladar los planetas
+                planets.forEach((planet, index) => {
+                    const data = planetData[index];
+
+                    // Traslación orbital
+                    const angle = Date.now() * 0.0001 * speed / (data.orbitTime / 365);
+                    planet.position.x = Math.cos(angle) * data.distance * 2;
+                    planet.position.z = Math.sin(angle) * data.distance * 2;
+
+                    // Rotación sobre su eje
+                    planet.rotation.y += delta * (2 * Math.PI / (data.rotationTime * 24 * 60 * 60));
+                });
+            }
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        // Iniciar la simulación
+        init();
+    </script>
+</body>
+</html>
